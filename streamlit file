@@ -1,0 +1,81 @@
+import streamlit as st
+import pickle
+import string
+import nltk
+from nltk.corpus import stopwords
+from sentence_transformers import SentenceTransformer, util
+
+
+st.set_page_config(page_title="Plagiarism Detection System", page_icon="🧠", layout="centered")
+
+st.title("🧠 Plagiarism Detection System")
+st.write("Detect plagiarism using **TF-IDF (Machine Learning)** and **BERT (Semantic Similarity)**")
+
+nltk.download("stopwords")
+
+#LOAD MODELS
+@st.cache_resource
+def load_models():
+    tfidf_model = pickle.load(open("model.pkl", "rb"))
+    tfidf_vectorizer = pickle.load(open("tfidf_vectorizer.pkl", "rb"))
+    bert_model = pickle.load(open("bert_plagiarism_model.pkl", "rb"))
+    return tfidf_model, tfidf_vectorizer, bert_model
+
+tfidf_model, tfidf_vectorizer, bert_model = load_models()
+
+#TEXT PREPROCESSING FUNCTION
+def preprocess_text(text):
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = text.lower()
+    stop_words = set(stopwords.words("english"))
+    text = " ".join(word for word in text.split() if word not in stop_words)
+    return text
+
+
+#TF-IDF MODEL
+def detect_tfidf(input_text):
+    cleaned = preprocess_text(input_text)
+    vectorized = tfidf_vectorizer.transform([cleaned])
+    result = tfidf_model.predict(vectorized)
+    return "Plagiarism Detected" if result[0] == 1 else "No Plagiarism"
+
+#BERT MODEL
+def detect_bert(text1, text2, threshold=0.8):
+    emb1 = bert_model.encode(text1, convert_to_tensor=True)
+    emb2 = bert_model.encode(text2, convert_to_tensor=True)
+    sim = util.pytorch_cos_sim(emb1, emb2).item()
+    result = "Plagiarism Detected" if sim >= threshold else "No Plagiarism"
+    return result, round(sim * 100, 2)
+
+#USER INPUT SECTION
+st.subheader("Enter Texts to Compare")
+
+col1, col2 = st.columns(2)
+with col1:
+    text1 = st.text_area("Enter Source Text", height=200, placeholder="Type or paste the original text here...")
+with col2:
+    text2 = st.text_area("Enter Suspected Text", height=200, placeholder="Type or paste the possibly plagiarized text here...")
+
+model_choice = st.radio("🔍 Choose Detection Method", ["TF-IDF (Classical ML)", "BERT (Semantic Similarity)"])
+
+#RUN DETECTION
+if st.button("Detect Plagiarism"):
+    if not text1.strip() or not text2.strip():
+        st.warning("⚠️ Please enter text in both boxes!")
+    else:
+        if model_choice == "TF-IDF (Classical ML)":
+            combined_text = text1 + " " + text2
+            result = detect_tfidf(combined_text)
+            st.subheader("🧩 TF-IDF Result:")
+            st.success(result)
+        else:
+            with st.spinner("Analyzing semantic similarity using BERT..."):
+                result, score = detect_bert(text1, text2)
+                st.subheader("🤖 BERT Result:")
+                st.success(f"{result}")
+                st.write(f"**Similarity Score:** {score}%")
+
+
+st.markdown("---")
+st.caption("Combines Machine Learning and BERT for accurate plagiarism detection.")
+
